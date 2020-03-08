@@ -7,9 +7,9 @@
 │   └── all
 │       └── pass.yml
 └── playbook.yml       # the playbook
- ├─nginx-lb - dockerfile and configuration file for nginx load balancer
+ ├─nginx-lb  # dockerfile and configuration file for nginx load balancer
  
- ├─ node1+node2  - contain dockerfiles for the two different apache nodes
+ ├─ node1+node2  #contain dockerfiles for the two different apache nodes
 
 ## Pre-requisits
 - Ansible

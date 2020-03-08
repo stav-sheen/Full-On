@@ -1,0 +1,180 @@
+# AWS playbook
+---
+
+- hosts: localhost
+  connection: local
+  gather_facts: False
+
+  vars:
+    key_name: my_aws # my key i created before hand
+    region: us-east-2
+    image: ami-08cec7c429219e339 # free tier ubuntu 16 image
+    id: "new-web-app"
+    sec_group: "{{ id }}-sec"
+
+
+  tasks:
+
+   - name: Get my public IP
+     ipify_facts:
+       timeout: 20
+     delegate_to: localhost
+     register: public_ip
+
+   - name: output
+     debug: msg="{{ipify_public_ip}}"
+
+   - name: create ssh key
+     openssh_keypair:
+        path: "~/.ssh/{{key_name}}"
+        type: rsa
+        size: 4096
+
+
+   - name: Provisioning EC2 instances
+     block:
+
+     - name: Upload public key to AWS
+       ec2_key:
+         name: "{{ key_name }}"
+         key_material: "{{ lookup('file', '/home/ubuntu/.ssh/{{ key_name }}.pub') }}" # my key's location
+         region: "{{ region }}"
+         aws_access_key: "{{ec2_access_key}}" # i made global vars with my keys in ansible vault (more secure)
+         aws_secret_key: "{{ec2_secret_key}}"
+
+     - name: Create security group
+       ec2_group:
+         name: "{{ sec_group }}"
+         description: "Sec group for app {{ id }}"
+         region: "{{ region }}"
+         aws_access_key: "{{ec2_access_key}}"
+         aws_secret_key: "{{ec2_secret_key}}"
+         rules:
+           - proto: tcp
+             ports:
+               - 22
+               - 80
+             cidr_ip: "{{ ipify_public_ip }}/32" # my ip
+             rule_desc: allow me on ssh  and http port
+       register: result_sec_group
+
+     - name: Provision instance
+       ec2:
+         aws_access_key: "{{ec2_access_key}}"
+         aws_secret_key: "{{ec2_secret_key}}"
+         key_name: "{{ key_name }}"
+         instance_tags:
+           name: "{{id}}"
+         group_id: "{{ result_sec_group.group_id }}"
+         image: "{{ image }}"
+         instance_type: t2.micro
+         region: "{{ region }}"
+         wait: true
+         count: 1
+       register: ec2
+
+     - name: Add the newly created host so that we can further contact it
+       add_host:
+         name: "{{ item.public_ip }}"
+         groups: webservers
+       with_items: "{{ ec2.instances }}"
+
+
+     - name: Wait for SSH to come up
+       wait_for:
+         host: "{{ item.public_ip }}"
+         port: 22
+         state: started
+       with_items: "{{ ec2.instances }}"
+
+
+- hosts: webservers
+  remote_user: ubuntu
+  become: yes
+  become_method: sudo
+  gather_facts: yes
+  vars:
+    ansible_ssh_private_key_file: "/home/ubuntu/.ssh/my_aws"
+  pre_tasks:
+   - name: 'install python'
+     raw: 'sudo apt-get -y install python'
+  tasks:
+   - name: Install prerequisites
+     apt:
+       name: ['apt-transport-https', 'ca-certificates', 'curl', 'gnupg2' ,'software-properties-common']
+       update_cache: yes
+
+   - name: Add Docker GPG key
+     apt_key: url=https://download.docker.com/linux/ubuntu/gpg
+   
+   - name: Add Docker APT repository
+     apt_repository:
+       repo: deb [arch=amd64] https://download.docker.com/linux/{{ansible_distribution|lower}} {{ansible_distribution_release}} stable
+   
+   - name: Install Docker
+     apt:
+       name: docker-ce
+       update_cache: yes 
+
+- hosts: webservers 
+  remote_user: ubuntu
+  become: yes
+  become_method: sudo
+  gather_facts: yes
+  vars:
+    ansible_ssh_private_key_file: "/home/ubuntu/.ssh/my_aws"
+  tasks:
+
+   - name: install pip
+     apt:
+       name: python3-pip
+       update_cache: yes
+
+   - name: install docker module for python
+     pip:
+       name: docker
+ 
+   - name: create website docker infrastructure and network
+     block:
+       - name: create docker network
+         docker_network:
+            name: appnetworker
+            ipam_config:
+              - subnet: 172.18.0.0/16
+
+       - name: application container node1
+         docker_container:
+           name: node1
+           image: stavsheen/apacher
+           state: started
+           networks:
+             - name: "appnetworker"
+               ipv4_address: "172.18.0.5"
+               aliases:
+                 - node1
+          
+       - name: application container node2
+         docker_container:
+           name: node2
+           image: stavsheen/apacher2
+           state: started
+           networks:
+             - name: "appnetworker"
+               ipv4_address: "172.18.0.6"
+               aliases:
+                 - node2
+       
+       - name: LB container
+         docker_container:
+           name: nginx-lb
+           image: stavsheen/balanceur
+           state: started
+           ports:
+           - "80:80"
+           networks:
+            - name: "appnetworker"
+              ipv4_address: "172.18.0.7"
+              aliases:
+                - nginx-lb
+
+

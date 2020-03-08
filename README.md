@@ -1,15 +1,13 @@
 # FUll-On 
 
 ## File structure
-
-.
-├── group_vars
-│   └── all
-│       └── pass.yml
-└── playbook.yml       # the playbook
- ├─nginx-lb  # dockerfile and configuration file for nginx load balancer
- 
- ├─ node1+node2  #contain dockerfiles for the two different apache nodes
+AWS_Ansible
+    .
+    ├── group_vars
+    │   ├── all --- pass.yml      # contains IAM user credentials
+    │               
+    │  
+    └── playbook.yml       #the playbook  
 
 ## Pre-requisits
 - Ansible
@@ -37,5 +35,5 @@ to run the playbook:
 - creates both the ec2 instance and its security group (enables connection on ports 80 & 22 )
 - install docker on the remote server.
 - install pip docker module.
-- creates network and runs containers. 
+- creates network and runs containers. (i already pushed the images to dockerhub. you can see the dockerfiles in the added directories)
 

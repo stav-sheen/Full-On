@@ -2,7 +2,7 @@
 
 ## File structure
 
-    .AWS_Ansible
+.
 ├── group_vars
 │   └── all
 │       └── pass.yml
